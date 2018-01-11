@@ -1,0 +1,58 @@
+# Projet géomatique sous R 
+
+# Etudier l'offre de logements Airbnb à Paris
+
+## Préparation de l'environnememnt de travail
+
+### Nettoyage de la mémoire
+```{r}
+# nettoyage de l'environnement
+rm(list = ls())
+```
+
+### Chargement des librairies
+```{r}
+#Chargement des librairies
+
+library("data.table") #pour le chargement rapide des dataset et leur manipulation
+
+#Données géographiques :
+library("sf")
+library("rgdal")
+library("rgeos")
+
+```
+
+### Chargement des données 
+```{r}
+#working directory
+setwd(dir="C:/Users/serou/Documents/cours/MEDAS/PROJET MEDAS - GEO/")
+
+#Offre hotelière
+Hotels <- readOGR(dsn = "./COUCHES/les_hotels_classes_en_ile-de-france"
+           , layer="les_hotels_classes_en_ile-de-france", stringsAsFactors=FALSE)
+
+#insideRBNB listing
+Irbnb_listings      <- fread("./COUCHES/InsideRBNB/listings.csv")
+Irbnb_listings_sum  <- fread("./COUCHES/InsideRBNB/listings_summary.csv")
+Irbnb_calendar      <- fread("./COUCHES/InsideRBNB/calendar.csv")
+
+#Admin Express
+pathAE <- "./COUCHES/ADMIN-EXPRESS-COG_1-0__SHP__FRA_2017-06-19/ADMIN-EXPRESS-COG/1_DONNEES_LIVRAISON_2017-06-19/ADE-COG_1-0_SHP_LAMB93_FR"
+dept <- readOGR(dsn = pathAE, layer="DEPARTEMENT", stringsAsFactors=FALSE)
+ardt <- readOGR(dsn = pathAE, layer="ARRONDISSEMENT_DEPARTEMENTAL", stringsAsFactors=FALSE)
+comn <- readOGR(dsn = pathAE, layer="COMMUNE", stringsAsFactors=FALSE)
+
+```
+
+## Carte des hotels et départements
+```{r}
+Hotels_v2 <- spTransform(Hotels, CRS("+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"))
+
+plot(dept[dept_v2@data$INSEE_REG=="11",])
+plot(Hotels_v2, add=TRUE)
+
+```
+
+
+

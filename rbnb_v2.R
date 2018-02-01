@@ -58,7 +58,7 @@ q5 <- add_osm_feature(opq = q0, key = 'admin_level', value = "10")
 res5 <- osmdata_sf(q5)
 quartier <- res5$osm_multipolygons
 
-#----Reshape and saving Open Street Map Data  for reusing
+#----Reshape and saving Open Street Map Data  for reusing----
 
 
 # use Lambert 93 projection (the french cartographic projection) for all layers
@@ -125,7 +125,7 @@ quartier_2 <- quartier
 st_geometry(quartier_2) <- NULL
 class(quartier_2)
 
-
+#calc density by km for hotels
 quartier$nhotels <- lengths(st_covers(quartier, hotels$geometry))
 quartier$dhotels <- quartier$nhotels / set_units(st_area(quartier), "km^2")
 
@@ -186,74 +186,93 @@ layoutLayer(title = "How Many Hotels in the Neighbourhood?", scale = 1,
 #----Functions to create MAP----
 
 
-#par quartier - densité et quantité
+#Rename variable in dataframe to 
 RenameVar <- function(data,vard,varq){
-  
-  
-  
+  names(data)[names(data) == vard] <- 'vard'
+  names(data)[names(data) == varq] <- 'varq'
+  return(data)
 }
 
-
-
-
 DensityAndQuantitybyScale <- function(ScaleMap=quartier, VarDensity , VarQuantity ){
-par(mar = c(0,0,1.2,0))
-plot(paris, col = "#D9D0C9", border = NA, bg = "#FBEDDA")
-plot(parc, col = "#CDEBB2", border = NA, add=T)
-plot(seine, col = "#AAD3DF", add=T, lwd = 4)
-plot(st_geometry(ScaleMap), col = NA,lty = 2, lwd = 0.2, add=T)
-propSymbolsChoroLayer(x = ScaleMap, var = "varq", var2 = "vard",
-                      inches = 0.2,
-                      method = "quantile", nclass = 6,
-                      col = carto.pal("wine.pal", 6),
-                      legend.var2.pos  = "topright", 
-                      legend.var2.title.txt = "Hotels bensity\nper km2",
-                      legend.var.title.txt = "Number of Hotels")
-plot(paris, add=T, lwd = 0.7)
-layoutLayer(title = "How Many Hotels in the Neighbourhood?", scale = 1,
+  ScaleMap <- RenameVar(ScaleMap,VarDensity,VarQuantity)
+  par(mar = c(0,0,1.2,0))
+  plot(paris, col = "#D9D0C9", border = NA, bg = "#FBEDDA")
+  plot(parc, col = "#CDEBB2", border = NA, add=T)
+  plot(seine, col = "#AAD3DF", add=T, lwd = 4)
+  plot(st_geometry(ScaleMap), col = NA,lty = 2, lwd = 0.2, add=T)
+  propSymbolsChoroLayer(x = ScaleMap, var = "varq", var2 = "vard",
+    inches = 0.2,
+    method = "quantile", nclass = 6,
+    col = carto.pal("wine.pal", 6),
+    legend.var2.pos  = "topright",
+    legend.var2.title.txt = "Hotels bensity\nper km2",
+    legend.var.title.txt = "Number of Hotels")
+  plot(paris, add=T, lwd = 0.7)
+  layoutLayer(title = "How Many Hotels in the Neighbourhood?", scale = 1,
             tabtitle = TRUE, frame = F, 
             author = "Map data Â© OpenStreetMap contributors, under CC BY SA.", 
             sources = "cartography 2.0.2")
 }
+
+
+
 #test de la fonction
 DensityAndQuantitybyScale(ScaleMap=quartier,
                           VarDensity="nhotels",
                           VarQuantity="dhotels")
 
-#identifier les lignes empty point
+
+
+
+#----Carte densite des hotels----
+
+dev.off()
+#export de la carte
+png(file = "maps/maptest_1.png", width = 2000, height = 1400, res=200)
+
+#Parametrage de l'espace de plot
+par(mar = c(1,1,1,0))
+
+#nettoyage du fichier hotel : suppression des points EMPTY
 rows <- which(!is.na(st_dimension(st_sfc(hotels$geometry))))
 bb <- as(st_geometry(hotels$geometry[rows]), "Spatial")
 
-
+#creation du raster density
 bbowin <- as.owin(as(paris, "Spatial"))
 pts <- coordinates(bb)
 p <- ppp(pts[,1], pts[,2], window=bbowin)
-
 ds <- density.ppp(p, sigma = 300, eps = c(20,20))
 rasdens <- raster(ds) * 1000 * 1000
 rasdens <- rasdens+1
-par(mar = c(0,0,1.2,0))
-bks <- getBreaks(values(rasdens), nclass = 6, method = "equal")
-cols <- colorRampPalette(c("black","#940000", "white"))(length(bks)-1)
 
+#gestion de la palette de couleur
+bks <- getBreaks(values(rasdens), nclass = 12 , method = "equal")
+cols <- colorRampPalette(c("white","yellow", "darkred"))(length(bks)-1)
 
-plot(paris, col = NA, border = NA, main="", bg = "#FBEDDA")
-plot(rasdens, breaks= bks, col=cols, add = TRUE,legend=F)
+#ajout du raster de densite
+plot(rasdens, breaks= bks, col=cols, add = FALSE,legend=F)
+
+#legende
 legendChoro(pos = "topright",cex = 0.7, title.cex = 0.7,
             title.txt = "Hotels density\nKDE, sigma=300m\n(hotels per km2)",
             breaks = bks-1, nodata = FALSE,values.rnd = 0,
             col = cols)
+
+#ajouts des autres éléments de contextes de la carte
 plot(seine, col = "#AAD3DF", add=TRUE, lwd = 4)
-plot(parc, col = "#CDEBB235", border = NA, add=T)
-plot(quartier$geometry, add=TRUE, border = "white",lty = 2, lwd = 0.05)
+plot(parc, col = "gray90", border = NA, add=T)
+plot(quartier$geometry, add=TRUE, border = "black",lty = 2, lwd = 0.05)
 plot(st_geometry(hotels), add=TRUE, col = "#0000ff90", pch = 20, cex = 0.1)
-
 plot(paris, col = NA, add=TRUE, border = "black",lwd = 1)
+plot(paris, col = NA, border = NA, main="", bg = "#FBEDDA",add=TRUE)
 
-north(pos = c(661171.8,6858500))
+#ajout de l'orientation de la carte
+north(pos = c(644000,6867000))
 
+#ajout du titre de la carte et des sources
 layoutLayer(title = "Hotels Density in Paris", scale = 1,
             tabtitle = TRUE, frame = FALSE,
-            author = "Map data Â© OpenStreetMap contributors, under CC BY SA.", 
+            author = "Map data © OpenStreetMap contributors, under CC BY SA. and hotels", 
             sources = "cartography 2.0.2") 
 
+dev.off()

@@ -1,8 +1,9 @@
 #ref : https://rcarto.github.io/caRtosm/index.html
 
-#cleaning
+#-----cleaning-----
 rm(list = ls())
 
+#-----library-----
 library("data.table") #to manage dataset
 
 #spatial data
@@ -21,12 +22,10 @@ library("maptools")
 library("raster")
 
 
-#working directory
+#----working directory----
 setwd(dir="C:/Users/acer/Desktop/PROJET MEDAS - GEO")
 
-#hotels
-hotels <- sf::read_sf( "./COUCHES/les_hotels_classes_en_ile-de-france/les_hotels_classes_en_ile-de-france.shp")
-
+#----Loading Open Street Map Data-----
 
 # define a bounding box
 q0 <- opq(bbox = c(2.2247, 48.8188, 2.4611, 48.9019)) 
@@ -59,6 +58,8 @@ q5 <- add_osm_feature(opq = q0, key = 'admin_level', value = "10")
 res5 <- osmdata_sf(q5)
 quartier <- res5$osm_multipolygons
 
+#----Reshape and saving Open Street Map Data  for reusing
+
 
 # use Lambert 93 projection (the french cartographic projection) for all layers
 parc1 <- st_transform(parc1, 2154)
@@ -68,7 +69,7 @@ paris <- st_transform(paris, 2154)
 seine1 <- st_transform(seine1, 2154)
 seine2 <- st_transform(seine2, 2154)
 quartier <- st_transform(quartier, 2154)
-hotels <- st_transform(hotels, 2154)
+
 
 # make layers pretty
 ## Parcs and cemetaries are merged into a single layer, we only keep objects 
@@ -87,19 +88,32 @@ seine <-c(seine, seine2)
 ## We only keep the Paris quartiers
 quartier <- quartier[substr(quartier$ref.INSEE,1,2)==75,]
 
+# save data to avoid over downloading
+save(list= c("paris", "quartier", "seine", "parc"), 
+     file = "data", compress = "xz")
 
-## Keeping hotels in paris boundaries
+#----Loading saved Open Street Map Data----
+
+load("data")
+
+#----Loading other sources data----
+
+# hotels
+hotels <- sf::read_sf( "./COUCHES/les_hotels_classes_en_ile-de-france/les_hotels_classes_en_ile-de-france.shp")
+
+# Keeping hotels in paris boundaries
 hotels <- hotels[hotels$departement=="75" ,]
 
 
-# save data to avoid over downloading
-save(list= c("paris", "quartier", "seine", "parc", "hotels"), 
-     file = "data", compress = "xz")
+#----Reshapping data----
 
-# /!\ loading treated data
-load("data")
+# use Lambert 93 projection 
+hotels <- st_transform(hotels, 2154)
 
 
+#----Sandbox----- 
+
+#first map
 plot(paris)
 plot(parc,add=TRUE,col="darkgreen")
 plot(seine,add=TRUE,col="blue", lwd = 4)
@@ -162,15 +176,25 @@ layoutLayer(title = "How Many Hotels in the Neighbourhood?", scale = 1,
             author = "Map data Â© OpenStreetMap contributors, under CC BY SA.", 
             sources = "cartography 2.0.2") 
 
+
+
+
+
+
+
+
+#----Functions to create MAP----
+
+
 #par quartier - densité et quantité
-
-
-
 RenameVar <- function(data,vard,varq){
   
   
   
 }
+
+
+
 
 DensityAndQuantitybyScale <- function(ScaleMap=quartier, VarDensity , VarQuantity ){
 par(mar = c(0,0,1.2,0))

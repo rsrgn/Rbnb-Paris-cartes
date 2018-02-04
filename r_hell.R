@@ -3,6 +3,7 @@ library(sf)
 library(geojsonio)
 library(data.table)
 library(stringr)
+library(htmltools)
 
 # Chargement des datasets
 # Données airbnb traitées sur Python
@@ -19,14 +20,20 @@ quartiers_paris <- sf::read_sf("Downloads/quartier_paris.geojson.json")
 arrondissements_paris <- geojsonio::geojson_read("Downloads/arrondissements.geojson.json", what="sp")
 # https://www.data.gouv.fr/fr/datasets/population/#resource-eea96c00-49c8-4e0f-8b24-e88c6b624fad (TRAITEMENT SUR PYTHON)
 population_paris <- fread("Downloads/population_paris.csv")
+# DataGouv + OSM (TRAITEMENT SUR PYTHON)
+loyers_ref_paris <- fread("Downloads/loyer_par_quartier.csv", sep=";")
+loyers_ref_paris <- loyers_ref_paris[,c('name', 'c_qu', 'ref')]
 
 # Conversion des coordonnées 
 df_sf <- st_as_sf(df, coords = c("longitude", "latitude"), crs = 4326, agr = "constant")
 hotel_paris_sf <- st_as_sf(hotel_paris, coords = c("geo2", "geo1"), crs = 4326, agr = "constant")
 arrondissements_paris_sf <- st_as_sf(arrondissements_paris, coords = c("geom_x_y2", "geom_x_y1"), crs = 4326, agr = "constant")
 
-# Merge arronddissement / population pour récupérer la pop. par arrondissement dans le géojson
+# Merge arrondissement / population pour récupérer la pop. par arrondissement dans le géojson
 arrondissements_paris_sf <- merge(arrondissements_paris_sf, population_paris, by.x=c("l_ar"), by.y=c("nom_commune"))
+
+# Merge loyers_ref / quartiers de paris pour récupérer le loyer de reférence par quartiers
+quartiers_paris <- merge(quartiers_paris, loyers_ref_paris, by=c('c_qu'))
 
 # Palette de couleurs
 pal <- colorNumeric("YlOrRd", NULL)
@@ -38,6 +45,10 @@ pal <- colorNumeric("YlOrRd", NULL)
 ### Niveau: Quartiers
 ## AirBNB
 quartiers_paris$airbnb_qrt <- lengths(st_covers(quartiers_paris, df_sf))
+labs <- sprintf(
+  "<strong>%s</strong><br/>%g offres",
+  quartiers_paris$l_qu, quartiers_paris$airbnb_qrt
+) %>% lapply(htmltools::HTML)
 m_bnb_offre_quartiers <- leaflet(quartiers_paris) %>%
   addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
   addPolygons(color="white",
@@ -45,15 +56,29 @@ m_bnb_offre_quartiers <- leaflet(quartiers_paris) %>%
               weight=2,
               smoothFactor = 0.3,
               fillOpacity = 0.9,
-              fillColor = ~pal(airbnb_qrt)) %>%
+              fillColor = ~pal(airbnb_qrt),
+              highlight = highlightOptions(
+                weight = 5,
+                color = "#666",
+                dashArray = "",
+                fillOpacity = 0.7,
+                bringToFront = TRUE),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
   addLegend(pal = pal,
             values = ~airbnb_qrt,
             opacity = 1.0,
             title = "Offre AirBnB / Quartiers")
 m_bnb_offre_quartiers
-
 ## Hotellerie
 quartiers_paris$hotels_qrt <- lengths(st_covers(quartiers_paris$geometry, hotel_paris_sf$geometry))
+labs <- sprintf(
+  "<strong>%s</strong><br/>%g offres",
+  quartiers_paris$l_qu, quartiers_paris$hotels_qrt
+) %>% lapply(htmltools::HTML)
 m_hotel_offre_quartiers <- leaflet(quartiers_paris) %>%
   addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
   addPolygons(color="white",
@@ -61,7 +86,12 @@ m_hotel_offre_quartiers <- leaflet(quartiers_paris) %>%
               weight=2,
               smoothFactor = 0.3,
               fillOpacity = 0.9,
-              fillColor = ~pal(hotels_qrt)) %>% 
+              fillColor = ~pal(hotels_qrt),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>% 
   addLegend(pal = pal,
             values = ~hotels_qrt,
             opacity = 1.0,
@@ -72,7 +102,10 @@ m_hotel_offre_quartiers
 ### Niveau: Arrondissements
 ## AirBNB
 arrondissements_paris_sf$airbnb_arrd <- lengths(st_covers(arrondissements_paris_sf, df_sf))
-
+labs <- sprintf(
+  "<strong>%s</strong><br/>%g offres",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$airbnb_arrd
+) %>% lapply(htmltools::HTML)
 m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
   addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
   addPolygons(color="white",
@@ -80,15 +113,23 @@ m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
               weight=2,
               smoothFactor = 0.3,
               fillOpacity = 0.9,
-              fillColor = ~pal(airbnb_arrd)) %>%
+              fillColor = ~pal(airbnb_arrd),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
   addLegend(pal = pal,
             values = ~airbnb_arrd,
             opacity = 1.0,
             title = "Offre AirBnB / Arrondissements")
 m_bnb_offre_arrd
-
 ## Hotellerie
 arrondissements_paris_sf$hotels_arrd <- lengths(st_covers(arrondissements_paris_sf, hotel_paris_sf))
+labs <- sprintf(
+  "<strong>%s</strong><br/>%g offres",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$hotels_arrd
+) %>% lapply(htmltools::HTML)
 m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
   addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
   addPolygons(color="white",
@@ -96,12 +137,18 @@ m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
               weight=2,
               smoothFactor = 0.3,
               fillOpacity = 0.9,
-              fillColor = ~pal(hotels_arrd)) %>% 
+              fillColor = ~pal(hotels_arrd),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>% 
   addLegend(pal = pal,
             values = ~hotels_arrd,
             opacity = 1.0,
             title = "Offre Hotels / Arrondissements")
 m_hotel_offre_arrd
+
 
 
 ##### Prix moyen d'une nuit/personne 
@@ -110,7 +157,11 @@ mean_price_qtr <- list()
 for (qtr_idx in 1:nrow(st_intersects(quartiers_paris, df_sf))){
   mean_price_qtr[[qtr_idx]] <- mean(df_sf[st_intersects(quartiers_paris, df_sf)[[qtr_idx]],,drop=F]$price)
 }
-quartiers_paris$prix_moyen <- as.numeric(mean_price_qtr)
+quartiers_paris$prix_moyen <- as.integer(as.numeric(mean_price_qtr))
+labs <- sprintf(
+  "<strong>%s</strong><br/>Prix moyen : %g €",
+  quartiers_paris$l_qu, quartiers_paris$prix_moyen
+) %>% lapply(htmltools::HTML)
 m_bnb_prix_moyen_quartiers <- leaflet(quartiers_paris) %>%
   addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
   addPolygons(color="white",
@@ -118,7 +169,12 @@ m_bnb_prix_moyen_quartiers <- leaflet(quartiers_paris) %>%
               weight=2,
               smoothFactor = 0.3,
               fillOpacity = 0.9,
-              fillColor = ~pal(prix_moyen)) %>%
+              fillColor = ~pal(prix_moyen),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
   addLegend(pal = pal,
             values = ~prix_moyen,
             opacity = 1.0,
@@ -131,7 +187,11 @@ mean_price_arrdt <- list()
 for (arrdt_idx in 1:nrow(st_intersects(arrondissements_paris_sf, df_sf))){
   mean_price_arrdt[[arrdt_idx]] <- mean(df_sf[st_intersects(arrondissements_paris_sf, df_sf)[[arrdt_idx]],,drop=F]$price)
 }
-arrondissements_paris_sf$prix_moyen <- as.numeric(mean_price_arrdt)
+arrondissements_paris_sf$prix_moyen <- as.integer(as.numeric(mean_price_arrdt))
+labs <- sprintf(
+  "<strong>%s</strong><br/>Prix moyen : %g €",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$prix_moyen
+) %>% lapply(htmltools::HTML)
 m_bnb_prix_moyen_arrdt <- leaflet(arrondissements_paris_sf) %>%
   addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
   addPolygons(color="white",
@@ -139,7 +199,12 @@ m_bnb_prix_moyen_arrdt <- leaflet(arrondissements_paris_sf) %>%
               weight=2,
               smoothFactor = 0.3,
               fillOpacity = 0.9,
-              fillColor = ~pal(prix_moyen)) %>%
+              fillColor = ~pal(prix_moyen),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
   addLegend(pal = pal,
             values = ~prix_moyen,
             opacity = 1.0,

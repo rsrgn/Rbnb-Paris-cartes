@@ -104,6 +104,48 @@ m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
 m_hotel_offre_arrd
 
 
+##### Prix moyen d'une nuit/personne 
+### Niveau: Quartiers
+mean_price_qtr <- list()
+for (qtr_idx in 1:nrow(st_intersects(quartiers_paris, df_sf))){
+  mean_price_qtr[[qtr_idx]] <- mean(df_sf[st_intersects(quartiers_paris, df_sf)[[qtr_idx]],,drop=F]$price)
+}
+quartiers_paris$prix_moyen <- as.numeric(mean_price_qtr)
+m_bnb_prix_moyen_quartiers <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              fillColor = ~pal(prix_moyen)) %>%
+  addLegend(pal = pal,
+            values = ~prix_moyen,
+            opacity = 1.0,
+            title = "Prix moyen / quartiers")
+m_bnb_prix_moyen_quartiers
+
+
+### Niveau: Arrondissements
+mean_price_arrdt <- list()
+for (arrdt_idx in 1:nrow(st_intersects(arrondissements_paris_sf, df_sf))){
+  mean_price_arrdt[[arrdt_idx]] <- mean(df_sf[st_intersects(arrondissements_paris_sf, df_sf)[[arrdt_idx]],,drop=F]$price)
+}
+arrondissements_paris_sf$prix_moyen <- as.numeric(mean_price_arrdt)
+m_bnb_prix_moyen_arrdt <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              fillColor = ~pal(prix_moyen)) %>%
+  addLegend(pal = pal,
+            values = ~prix_moyen,
+            opacity = 1.0,
+            title = "Prix moyen / quartiers")
+m_bnb_prix_moyen_arrdt
+
 
 
 ### TO DO 

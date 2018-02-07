@@ -9,6 +9,7 @@ library(geojsonio)
 library(data.table)
 library(stringr)
 library(htmltools)
+library(htmlwidgets)
 
 
 library(lwgeom)
@@ -131,7 +132,7 @@ quartiers_paris$hotels_density <- as.numeric(quartiers_paris$hotels_qrt / set_un
 
 #Calcul du nombre de chambres d'hotels par quartiers
 st_covers_HotelsByQuartiers<- st_covers(quartiers_paris$geometry, hotel_paris_sf$geometry)
-for(i in 1:length(st_covers_test)){
+for(i in 1:length(st_covers_HotelsByQuartiers)){
   quartiers_paris$hotels_c_qrt[i] <- sum(
     hotel_paris_sf[["nombre_de_c"]][st_covers_HotelsByQuartiers[[i]]])
 }

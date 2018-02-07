@@ -122,7 +122,7 @@ labsQuartiersRbnb <- sprintf(
   quartiers_paris$l_qu, quartiers_paris$airbnb_density
 ) %>% lapply(htmltools::HTML)
 
-#---Carte densité rbnb VS densité chambre d'hotels
+#----Carte densité rbnb VS densité chambre d'hotels----
 
 #calcul nombre d'hotels par quartiers
 quartiers_paris$hotels_qrt <- lengths(st_covers(quartiers_paris$geometry, hotel_paris_sf$geometry))
@@ -145,6 +145,8 @@ labsQuartiersHotels <- sprintf(
   "<strong>%s</strong><br/>%g Chambres d'hotel par km²",
   quartiers_paris$l_qu, quartiers_paris$hotels_c_density
 ) %>% lapply(htmltools::HTML)
+
+
 
 m_bnb_offre_quartiers <- leaflet(quartiers_paris) %>%
   #font de carte
@@ -202,9 +204,14 @@ m_bnb_offre_quartiers <- leaflet(quartiers_paris) %>%
 
 m_bnb_offre_quartiers
 
+#enregistrement de la carte au format html
+saveWidget(widget=m_bnb_offre_quartiers , file="m_bnb_offre_quartiers.html")
 
-## Hotellerie
+
+
+#----Hotellerie----
 quartiers_paris$hotels_qrt <- lengths(st_covers(quartiers_paris$geometry, hotel_paris_sf$geometry))
+
 
 labsQuartiersHotels <- sprintf(
   "<strong>%s</strong><br/>%g hotels",
@@ -231,14 +238,19 @@ m_hotel_offre_quartiers <- leaflet(quartiers_paris) %>%
 
 m_hotel_offre_quartiers
 
-
+#----Carte densite RBNB par km2 par arrondissement----
 ### Niveau: Arrondissements
 ## AirBNB
-arrondissements_paris_sf$airbnb_arrd <- lengths(st_covers(arrondissements_paris_sf, df_sf))
+
+#calcul nombre RBNB par arrondissement
+arrondissements_paris_sf$airbnb_nb <- lengths(st_covers(arrondissements_paris_sf, df_sf))
+#calcul densite RBNB par km2 par arrondissement 
+arrondissements_paris_sf$airbnb_density <- as.numeric(arrondissements_paris_sf$airbnb_nb / set_units(st_area(arrondissements_paris_sf), "km^2"))
+
 
 labs <- sprintf(
-  "<strong>%s</strong><br/>%g offres",
-  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$airbnb_arrd
+  "<strong>%s</strong><br/>%g annonces RBNB",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$airbnb_density
 ) %>% lapply(htmltools::HTML)
 
 m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
@@ -248,26 +260,40 @@ m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
               weight=2,
               smoothFactor = 0.3,
               fillOpacity = 0.9,
-              fillColor = ~pal(airbnb_arrd),
+              fillColor = ~pal(airbnb_density),
               label = labs,
               labelOptions = labelOptions(
                 style = list("font-weight" = "normal", padding = "3px 8px"),
                 textsize = "15px",
                 direction = "auto")) %>%
   addLegend(pal = pal,
-            values = ~airbnb_arrd,
+            values = ~airbnb_density,
             opacity = 1.0,
-            title = "Offre AirBnB /<br/> Arrondissements")
+            title = "Nombre d'annonces<br/>AirBnB par km²<br/>par arrondissements")
 m_bnb_offre_arrd
 
+#----carte hotels par km2 par arrondissement----
 
-## Hotellerie
-arrondissements_paris_sf$hotels_arrd <- lengths(st_covers(arrondissements_paris_sf, hotel_paris_sf))
-arrondissements_paris_sf
+#calcul nombre d'hotels par arrondissment
+arrondissements_paris_sf$hotels_nb <- lengths(st_covers(arrondissements_paris_sf$geometry, hotel_paris_sf$geometry))
+
+#Calcul densite d'hotel par km² par arrondissement
+arrondissements_paris_sf$hotels_density <- as.numeric(arrondissements_paris_sf$hotels_nb / set_units(st_area(arrondissements_paris_sf), "km^2"))
+
+#Calcul du nombre de chambres d'hotels par arrondissement
+st_covers_HotelsByArdt <- st_covers(arrondissements_paris_sf$geometry, hotel_paris_sf$geometry)
+
+for(i in 1:length(st_covers_HotelsByArdt)){
+  arrondissements_paris_sf$hotels_c_nb[i] <- sum(
+    hotel_paris_sf[["nombre_de_c"]][st_covers_HotelsByArdt[[i]]])
+}
+
+#Calcul densite de chambres d'hotel par km² par quartier
+arrondissements_paris_sf$hotels_c_density <- as.numeric(arrondissements_paris_sf$hotels_c_nb / set_units(st_area(arrondissements_paris_sf), "km^2"))
 
 labs <- sprintf(
-  "<strong>%s</strong><br/>%g hotels",
-  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$hotels_arrd
+  "<strong>%s</strong><br/>%g Nombre de<br/>chambres d'hotel par km²",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$hotels_c_density
 ) %>% lapply(htmltools::HTML)
 
 m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
@@ -277,19 +303,131 @@ m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
               weight=2,
               smoothFactor = 0.3,
               fillOpacity = 0.9,
-              fillColor = ~pal(hotels_arrd),
+              fillColor = ~pal(hotels_c_density),
               label = labs,
               labelOptions = labelOptions(
                 style = list("font-weight" = "normal", padding = "3px 8px"),
                 textsize = "15px",
                 direction = "auto")) %>% 
   addLegend(pal = pal,
-            values = ~hotels_arrd,
+            values = ~hotels_c_density,
             opacity = 1.0,
-            title = "Nombre d'hotels /<br/>Arrondissements")
+            title = "Nombre de chambres<br/>d'hotel par km²<br/>par arrondissements")
 
 m_hotel_offre_arrd
 
+
+#----carte hotels par hab par arrondissement----
+
+#calcul nombre d'hotels par arrondissment
+arrondissements_paris_sf$hotels_nb <- lengths(st_covers(arrondissements_paris_sf$geometry, hotel_paris_sf$geometry))
+
+#Calcul densite d'hotel par hab par arrondissement
+arrondissements_paris_sf$hotels_density_hab <- as.numeric(
+  arrondissements_paris_sf$hotels_nb / arrondissements_paris_sf$pop_totale)
+
+#Calcul du nombre de chambres d'hotels par arrondissement
+st_covers_HotelsByArdt <- st_covers(arrondissements_paris_sf$geometry, hotel_paris_sf$geometry)
+
+for(i in 1:length(st_covers_HotelsByArdt)){
+  arrondissements_paris_sf$hotels_c_nb[i] <- sum(
+    hotel_paris_sf[["nombre_de_c"]][st_covers_HotelsByArdt[[i]]])
+}
+
+#Calcul densite de chambres d'hotel par habitant par quartier
+arrondissements_paris_sf$hotels_c_density_hab <- as.numeric(
+  arrondissements_paris_sf$hotels_c_nb / arrondissements_paris_sf$pop_totale)
+
+labs <- sprintf(
+  "<strong>%s</strong><br/>%g Nombre de<br/>chambres d'hotel par habitant",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$hotels_c_density_hab
+) %>% lapply(htmltools::HTML)
+
+m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              fillColor = ~pal(hotels_c_density_hab),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>% 
+  addLegend(pal = pal,
+            values = ~hotels_c_density_hab,
+            opacity = 1.0,
+            title = "Nombre de chambres<br/>d'hotel par habitant<br/>par arrondissements")
+
+m_hotel_offre_arrd
+
+#----Carte densite RBNB par hab par arrondissement----
+### Niveau: Arrondissements
+## AirBNB
+
+#calcul nombre RBNB par arrondissement
+arrondissements_paris_sf$airbnb_nb <- lengths(st_covers(arrondissements_paris_sf, df_sf))
+#calcul densite RBNB par Hab par arrondissement 
+arrondissements_paris_sf$airbnb_density_hab <- as.numeric(
+  arrondissements_paris_sf$airbnb_nb / arrondissements_paris_sf$pop_totale)
+
+
+labs <- sprintf(
+  "<strong>%s</strong><br/>%g Nombre d'annonces<br/>RBNB par habitant",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$airbnb_density_hab
+) %>% lapply(htmltools::HTML)
+
+m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              fillColor = ~pal(airbnb_density_hab),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal,
+            values = ~airbnb_density_hab,
+            opacity = 1.0,
+            title = "Nombre d'annonces<br/>AirBnB par habitant<br/>par arrondissements")
+m_bnb_offre_arrd
+
+#----Carte densite hab par km² arrondissement----
+#Ce serait pas mal de calculer les surface hors parcs et cimetières
+
+#calcul densite hab par km² par arrondissement 
+arrondissements_paris_sf$density_hab_km <- as.numeric(
+  arrondissements_paris_sf$pop_totale / set_units(st_area(arrondissements_paris_sf), "km^2"))
+
+labs <- sprintf(
+  "<strong>%s</strong><br/>%g habitants par km²",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$density_hab_km
+) %>% lapply(htmltools::HTML)
+
+m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              fillColor = ~pal(density_hab_km),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal,
+            values = ~density_hab_km,
+            opacity = 1.0,
+            title = "Nombre d'habitants<br/>par km²<br/>par arrondissements")
+m_bnb_offre_arrd
 
 
 ##### Prix moyen d'une nuit/personne 

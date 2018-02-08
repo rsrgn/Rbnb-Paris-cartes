@@ -4,7 +4,7 @@
 .Ruserdata
 *.json
 *.csv
-.inputs/
-.inputs/*
+.COUCHES/
+.COUCHES/*
 m_bnb_offre_quartiers.html
 .ipynb_checkpoints/

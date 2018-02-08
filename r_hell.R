@@ -44,6 +44,8 @@ arrondissements_paris <- geojsonio::geojson_read(x = "./COUCHES/arrondissements.
 population_paris <- fread("./COUCHES/population_paris.csv")
 
 #INSEE donné du resensement 2014
+#https://www.insee.fr/fr/statistiques/fichier/3137409/base-ic-evol-struct-pop-2014.zip
+#fichier transformé (supression des entêtes et des métadonnées) en .csv puis renomé en "pop_2014_insee.csv" 
 pop2014 <- fread("./COUCHES/pop_2014_insee.csv")
 
 

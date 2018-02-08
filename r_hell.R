@@ -11,7 +11,6 @@ library(stringr)
 library(htmltools)
 library(htmlwidgets)
 
-
 library(lwgeom)
 library(units)
 #----Dossier de travail----
@@ -44,10 +43,17 @@ arrondissements_paris <- geojsonio::geojson_read(x = "./COUCHES/arrondissements.
 #population_paris <- fread("Downloads/population_paris.csv")
 population_paris <- fread("./COUCHES/population_paris.csv")
 
+#INSEE donné du resensement 2014
+pop2014 <- fread("./COUCHES/pop_2014_insee.csv")
+
+
 # DataGouv + OSM (TRAITEMENT SUR PYTHON)
 #loyers_ref_paris <- fread("Downloads/loyer_par_quartier.csv", sep=";")
 loyers_ref_paris <- fread("./COUCHES/loyer_par_quartier.csv", sep=";")
 loyers_ref_paris <- loyers_ref_paris[,c('name', 'c_qu', 'ref')]
+
+
+
 
 #----correctrion d'encodage----
 arrondissements_paris$l_ar <- as.character(arrondissements_paris$l_ar)

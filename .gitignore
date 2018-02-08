@@ -2,5 +2,9 @@
 .Rhistory
 .RData
 .Ruserdata
-listings.csv
-listings-2.csv
+*.json
+*.csv
+.inputs/
+.inputs/*
+m_bnb_offre_quartiers.html
+.ipynb_checkpoints/

@@ -14,42 +14,46 @@ library(htmlwidgets)
 library(lwgeom)
 library(units)
 #----Dossier de travail----
-setwd(dir="C:/Users/acer/Desktop/PROJET MEDAS - GEO")
+setwd(dir="~/MEDAS/ApprochesSpatiales/Rbnb-Paris-cartes")
 
 #----Chargement des datasets----
 
 # DonnÃ©es airbnb traitÃ©es sur Python
-#df <- fread("Downloads/dff.csv", sep=";")
-df <- fread("./COUCHES/dff.csv", sep=";")
+df <- fread("inputs/dff.csv", sep=";")
+#df <- fread("./COUCHES/dff.csv", sep=";")
 df <- df[complete.cases(df), ]
 
-#airbnb_quartiers <- geojsonio::geojson_read("Downloads/prix_airbnb_quartiers.geojson", what="sp")
+#airbnb_quartiers <- geojsonio::geojson_read("inputs/prix_airbnb_quartiers.geojson", what="sp")
 
 # https://data.iledefrance.fr/explore/dataset/les_hotels_classes_en_ile-de-france/export/?refine.departement=75
-#hotel_paris <- geojsonio::geojson_read("Downloads/les_hotels_classes_en_ile-de-france.geojson-2.json", what="sp")
-hotel_paris <- sf::read_sf( "./COUCHES/les_hotels_classes_en_ile-de-france/les_hotels_classes_en_ile-de-france.shp")
+hotel_paris <- geojsonio::geojson_read("inputs/les_hotels_classes_en_ile-de-france.geojson-2.json", what="sp")
+#hotel_paris <- sf::read_sf( "./COUCHES/les_hotels_classes_en_ile-de-france/les_hotels_classes_en_ile-de-france.shp")
 
 # https://opendata.paris.fr/explore/dataset/quartier_paris/export/?location=12,48.85889,2.34692
-#quartiers_paris <- sf::read_sf("Downloads/quartier_paris.geojson.json")
-quartiers_paris <- sf::read_sf("./COUCHES/quartier_paris.geojson") 
+quartiers_paris <- sf::read_sf("inputs/quartier_paris.geojson.json")
+#quartiers_paris <- sf::read_sf("./COUCHES/quartier_paris.geojson") 
 
 # https://opendata.paris.fr/explore/dataset/arrondissements/
-#arrondissements_paris <- geojsonio::geojson_read("Downloads/arrondissements.geojson.json", what="sp")
-arrondissements_paris <- geojsonio::geojson_read(x = "./COUCHES/arrondissements.geojson", 
-                                                 what = "sp", 
-                                                 encoding="UTF-8")
+arrondissements_paris <- geojsonio::geojson_read("inputs/arrondissements.geojson.json", what="sp")
+#arrondissements_paris <- geojsonio::geojson_read(x = "./COUCHES/arrondissements.geojson", 
+#                                                 what = "sp", 
+#                                                 encoding="UTF-8")
 
 # https://www.data.gouv.fr/fr/datasets/population/#resource-eea96c00-49c8-4e0f-8b24-e88c6b624fad (TRAITEMENT SUR PYTHON)
-#population_paris <- fread("Downloads/population_paris.csv")
-population_paris <- fread("./COUCHES/population_paris.csv")
+population_paris <- fread("inputs/population_paris.csv")
+#population_paris <- fread("./COUCHES/population_paris.csv")
 
-#INSEE donné du resensement 2014
-pop2014 <- fread("./COUCHES/pop_2014_insee.csv")
+# INSEE donn? du resensement 2014
+#pop2014 <- fread("./COUCHES/pop_2014_insee.csv")
+
+# Loueurs suspects (traitement sur python)
+loueurs_suspects <- fread('inputs/possibly_illegal_hosts.csv', sep=";")
+loueurs_suspects_income <- fread('inputs/possibly_illegal_hosts_monthly_income.csv', sep=';')
 
 
 # DataGouv + OSM (TRAITEMENT SUR PYTHON)
-#loyers_ref_paris <- fread("Downloads/loyer_par_quartier.csv", sep=";")
-loyers_ref_paris <- fread("./COUCHES/loyer_par_quartier.csv", sep=";")
+loyers_ref_paris <- fread("inputs/loyer_par_quartier.csv", sep=";")
+#loyers_ref_paris <- fread("./COUCHES/loyer_par_quartier.csv", sep=";")
 loyers_ref_paris <- loyers_ref_paris[,c('name', 'c_qu', 'ref')]
 
 
@@ -76,6 +80,9 @@ arrondissements_paris_sf <- merge(arrondissements_paris_sf, population_paris, by
 
 # Merge loyers_ref / quartiers de paris pour rÃ©cupÃ©rer le loyer de refÃ©rence par quartiers
 quartiers_paris <- merge(quartiers_paris, loyers_ref_paris, by=c('c_qu'))
+
+# Merge loueurs_suspects / loueurs_suspects_income
+loueurs_suspects <- merge(loueurs_suspects, loueurs_suspects_income, by=c('host_id'))
 
 # Palette de couleurs
 pal <- colorNumeric("YlOrRd", NULL)
@@ -124,16 +131,16 @@ m_bnb_offre_quartiers
 
 
 labsQuartiersRbnb <- sprintf(
-  "<strong>%s</strong><br/>%g offres RBNB par km²",
+  "<strong>%s</strong><br/>%g offres RBNB par km?",
   quartiers_paris$l_qu, quartiers_paris$airbnb_density
 ) %>% lapply(htmltools::HTML)
 
-#----Carte densité rbnb VS densité chambre d'hotels----
+#----Carte densit? rbnb VS densit? chambre d'hotels----
 
 #calcul nombre d'hotels par quartiers
 quartiers_paris$hotels_qrt <- lengths(st_covers(quartiers_paris$geometry, hotel_paris_sf$geometry))
 
-#Calcul densite d'hotel par km² par quartier
+#Calcul densite d'hotel par km? par quartier
 quartiers_paris$hotels_density <- as.numeric(quartiers_paris$hotels_qrt / set_units(st_area(quartiers_paris), "km^2"))
 
 #Calcul du nombre de chambres d'hotels par quartiers
@@ -143,12 +150,12 @@ for(i in 1:length(st_covers_HotelsByQuartiers)){
     hotel_paris_sf[["nombre_de_c"]][st_covers_HotelsByQuartiers[[i]]])
 }
 
-#Calcul densite de chambres d'hotel par km² par quartier
+#Calcul densite de chambres d'hotel par km? par quartier
 quartiers_paris$hotels_c_density <- as.numeric(quartiers_paris$hotels_c_qrt / set_units(st_area(quartiers_paris), "km^2"))
 
 
 labsQuartiersHotels <- sprintf(
-  "<strong>%s</strong><br/>%g Chambres d'hotel par km²",
+  "<strong>%s</strong><br/>%g Chambres d'hotel par km?",
   quartiers_paris$l_qu, quartiers_paris$hotels_c_density
 ) %>% lapply(htmltools::HTML)
 
@@ -180,7 +187,7 @@ m_bnb_offre_quartiers <- leaflet(quartiers_paris) %>%
   addLegend(pal = pal,
             values = ~airbnb_density,
             opacity = 1.0,
-            title = "Nombre d'annonces<br/>AirBnB par km²<br/>par quartiers",
+            title = "Nombre d'annonces<br/>AirBnB par km?<br/>par quartiers",
             position = "bottomleft") %>%
   #Chorolopeh Hotels densite
   addPolygons(group="hotels", 
@@ -199,7 +206,7 @@ m_bnb_offre_quartiers <- leaflet(quartiers_paris) %>%
   addLegend(pal = pal,
             values = ~hotels_c_density,
             opacity = 1.0,
-            title = "Nombre de chambres<br/>d'hotels par km²<br/>par quartier",
+            title = "Nombre de chambres<br/>d'hotels par km?<br/>par quartier",
             position = "bottomright") %>%
   # Layers control
   addLayersControl(
@@ -275,7 +282,7 @@ m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
   addLegend(pal = pal,
             values = ~airbnb_density,
             opacity = 1.0,
-            title = "Nombre d'annonces<br/>AirBnB par km²<br/>par arrondissements")
+            title = "Nombre d'annonces<br/>AirBnB par km?<br/>par arrondissements")
 m_bnb_offre_arrd
 
 #----carte hotels par km2 par arrondissement----
@@ -283,7 +290,7 @@ m_bnb_offre_arrd
 #calcul nombre d'hotels par arrondissment
 arrondissements_paris_sf$hotels_nb <- lengths(st_covers(arrondissements_paris_sf$geometry, hotel_paris_sf$geometry))
 
-#Calcul densite d'hotel par km² par arrondissement
+#Calcul densite d'hotel par km? par arrondissement
 arrondissements_paris_sf$hotels_density <- as.numeric(arrondissements_paris_sf$hotels_nb / set_units(st_area(arrondissements_paris_sf), "km^2"))
 
 #Calcul du nombre de chambres d'hotels par arrondissement
@@ -294,11 +301,11 @@ for(i in 1:length(st_covers_HotelsByArdt)){
     hotel_paris_sf[["nombre_de_c"]][st_covers_HotelsByArdt[[i]]])
 }
 
-#Calcul densite de chambres d'hotel par km² par quartier
+#Calcul densite de chambres d'hotel par km? par quartier
 arrondissements_paris_sf$hotels_c_density <- as.numeric(arrondissements_paris_sf$hotels_c_nb / set_units(st_area(arrondissements_paris_sf), "km^2"))
 
 labs <- sprintf(
-  "<strong>%s</strong><br/>%g Nombre de<br/>chambres d'hotel par km²",
+  "<strong>%s</strong><br/>%g Nombre de<br/>chambres d'hotel par km?",
   arrondissements_paris_sf$l_ar, arrondissements_paris_sf$hotels_c_density
 ) %>% lapply(htmltools::HTML)
 
@@ -318,7 +325,7 @@ m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
   addLegend(pal = pal,
             values = ~hotels_c_density,
             opacity = 1.0,
-            title = "Nombre de chambres<br/>d'hotel par km²<br/>par arrondissements")
+            title = "Nombre de chambres<br/>d'hotel par km?<br/>par arrondissements")
 
 m_hotel_offre_arrd
 
@@ -404,15 +411,15 @@ m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
             title = "Nombre d'annonces<br/>AirBnB par habitant<br/>par arrondissements")
 m_bnb_offre_arrd
 
-#----Carte densite hab par km² arrondissement----
-#Ce serait pas mal de calculer les surface hors parcs et cimetières
+#----Carte densite hab par km? arrondissement----
+#Ce serait pas mal de calculer les surface hors parcs et cimeti?res
 
-#calcul densite hab par km² par arrondissement 
+#calcul densite hab par km? par arrondissement 
 arrondissements_paris_sf$density_hab_km <- as.numeric(
   arrondissements_paris_sf$pop_totale / set_units(st_area(arrondissements_paris_sf), "km^2"))
 
 labs <- sprintf(
-  "<strong>%s</strong><br/>%g habitants par km²",
+  "<strong>%s</strong><br/>%g habitants par km?",
   arrondissements_paris_sf$l_ar, arrondissements_paris_sf$density_hab_km
 ) %>% lapply(htmltools::HTML)
 
@@ -432,7 +439,7 @@ m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
   addLegend(pal = pal,
             values = ~density_hab_km,
             opacity = 1.0,
-            title = "Nombre d'habitants<br/>par km²<br/>par arrondissements")
+            title = "Nombre d'habitants<br/>par km?<br/>par arrondissements")
 m_bnb_offre_arrd
 
 
@@ -498,10 +505,48 @@ m_bnb_prix_moyen_arrdt <- leaflet(arrondissements_paris_sf) %>%
   addLegend(pal = pal,
             values = ~prix_moyen,
             opacity = 1.0,
-            title = "Prix moyen / quartiers")
+            title = "Prix moyen / arrdt")
 m_bnb_prix_moyen_arrdt
 
+######## Loueurs suspects
+### Niveau: Quartiers
+labs <- sprintf(
+  "<strong>%s</strong><br/>Prix moyen : %g â‚¬",
+  quartiers_paris$l_qu, quartiers_paris$prix_moyen
+) %>% lapply(htmltools::HTML)
 
+mlabs <- sprintf(
+  "<strong>HostID : %s</strong><br/>Estim. revenu mensuel : %g â‚¬",
+  loueurs_suspects$host_id, loueurs_suspects$estimated_monthly_income
+) %>% lapply(htmltools::HTML)
+
+m_bnb_loueurs_suspects_qtr <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              fillColor = ~pal(prix_moyen),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal,
+            values = ~prix_moyen,
+            opacity = 1.0,
+            title = "Prix moyen nuit <br/>RBNB / quartiers") %>%
+  addMarkers(lng = ~loueurs_suspects$longitude,
+             lat = ~loueurs_suspects$latitude,
+             clusterOptions = markerClusterOptions(),
+             label = mlabs,
+             labelOptions = labelOptions(
+               style = list("font-weight" = "normal", padding = "3px 8px"),
+               textsize = "10px",
+               direction = "auto"))
+
+m_bnb_loueurs_suspects_qtr
 
 ### TO DO 
 ##### RÃ©partition de l'offre AirBNB proportionnellement Ã  la population rÃ©sidente [QUARTIERS SEULEMENT]

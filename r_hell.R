@@ -25,6 +25,7 @@ df <- fread("./COUCHES/airbnb.csv", sep=";")
 
 # https://data.iledefrance.fr/explore/dataset/les_hotels_classes_en_ile-de-france/export/?refine.departement=75
 hotel_paris <- sf::read_sf( "./COUCHES/les_hotels_classes_en_ile-de-france/les_hotels_classes_en_ile-de-france.shp")
+# hotel_paris <-geojsonio::geojson_read( "./COUCHES/les_hotels_classes_en_ile-de-france.geojson.json", what = "sp")
 
 # https://opendata.paris.fr/explore/dataset/quartier_paris/export/?location=12,48.85889,2.34692
 quartiers_paris <- sf::read_sf("./COUCHES/quartier_paris.geojson.json")
@@ -40,7 +41,7 @@ population_paris <- fread("./COUCHES/population_paris.csv")
 #INSEE donn? du recensement 2014
 #https://www.insee.fr/fr/statistiques/fichier/3137409/base-ic-evol-struct-pop-2014.zip
 #fichier transform? (supression des ent?tes et des m?tadonn?es) en .csv puis renom? en "pop_2014_insee.csv" 
-# pop2014 <- fread("./COUCHES/pop_2014_insee.csv")
+pop2014 <- fread("./COUCHES/pop_2014_insee.csv")
 
 # DataGouv + OSM (TRAITEMENT SUR PYTHON)
 loyers_ref_paris <- fread("./COUCHES/loyer_par_quartier.csv", sep=";")
@@ -49,6 +50,9 @@ loyers_ref_paris <- loyers_ref_paris[,c('name', 'c_qu', 'ref')]
 # https://jdn.carto.com/datasets
 marge_airbnb <- geojsonio::geojson_read("./COUCHES/paris_les_quartiers_o_airbnb_rapporte_le_plus_compar_la_locatio.geojson.json", what="sp")
 
+loueurs_suspects <- fread("./COUCHES/possibly_illegal_hosts.csv", sep=";")
+loueurs_suspects_income <- fread("./COUCHES/possibly_illegal_hosts_monthly_income.csv", sep=";")
+loueurs_suspects <- merge(loueurs_suspects, loueurs_suspects_income, by=c('host_id'))
 
 
 #----correctrion d'encodage----
@@ -155,433 +159,38 @@ for (arrdt_idx in 1:nrow(st_intersects(arrondissements_paris_sf, df_sf))){
 }
 arrondissements_paris_sf$prix_moyen <- as.integer(as.numeric(mean_price_arrdt))
 
+#Merge quartier / pop2014
+
+pop2014_paris <- pop2014[pop2014$DEP=="75",]
+pop2014_paris[,"P14_POP"] <- as.numeric(gsub(",", ".", as.matrix(pop2014_paris[,"P14_POP"])))
+pop2014_paris$code_qrt <- as.numeric(substring(pop2014_paris$GRD_QUART, 6, 7))
+
+for(i in 1:nrow(quartiers_paris)){
+  quartiers_paris$pop2014[i] <- sum(
+    pop2014_paris[pop2014_paris$code_qrt==quartiers_paris$c_qu[i],"P14_POP"]
+  )
+}
+
+#calcul densite hab par km² par quartier 
+quartiers_paris$density_hab_km <- as.numeric(
+  quartiers_paris$pop2014 / set_units(st_area(quartiers_paris), "km^2"))
+#Calcul densite de chambres d'hotel par habitant par quartier
+quartiers_paris$hotels_c_density_hab <- as.numeric(
+  quartiers_paris$hotels_c_qrt / quartiers_paris$pop2014)
+#calcul densite RBNB par Hab par quartier 
+quartiers_paris$airbnb_density_hab <- as.numeric(
+  quartiers_paris$airbnb_qrt / quartiers_paris$pop2014)
+
+hotel_paris <-geojsonio::geojson_read( "./COUCHES/les_hotels_classes_en_ile-de-france.geojson.json", what = "sp")
 #----Sauvegarde des donn?es----
 save(list= c("arrondissements_paris_sf", 
-             "quartiers_paris"), 
+             "quartiers_paris",
+             "loueurs_suspects",
+             "marge_airbnb",
+             "df",
+             "hotel_paris"), 
      file = "data", compress = "xz")
 
 #----Chargement des donn?es----
 load("data")
-
-#----Palette de couleurs----
-pal <- colorNumeric("YlOrRd", NULL)
-
-#----Question 1 - repartition spaciale RBNB VS HOTELERIE---- 
-
-##### Répartition spatiale de l'offre AirBNB et de l'hotellerie
-### Niveau: Quartiers
-## AirBNB par km²
-
-
-
-labsQuartiersRbnb <- sprintf(
-  "<strong>%s</strong><br/>%g offres",
-  quartiers_paris$l_qu, quartiers_paris$airbnb_qrt
-) %>% lapply(htmltools::HTML)
-
-m_bnb_offre_quartiers <- leaflet(quartiers_paris) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(airbnb_qrt),
-              highlight = highlightOptions(
-                weight = 5,
-                color = "#666",
-                dashArray = "",
-                fillOpacity = 0.7,
-                bringToFront = TRUE),
-              label = labsQuartiersRbnb,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>%
-  addLegend(pal = pal,
-            values = ~airbnb_qrt,
-            opacity = 1.0,
-            title = "Offre AirBnB / Quartiers")
-
-m_bnb_offre_quartiers
-
-
-# labsQuartiersRbnb <- sprintf(
-#   "<strong>%s</strong><br/>%g offres RBNB par km?",
-#   quartiers_paris$l_qu, quartiers_paris$airbnb_density
-# ) %>% lapply(htmltools::HTML)
-
-#----Carte densit? rbnb VS densit? chambre d'hotels----
-
-
-
-labsQuartiersHotels <- sprintf(
-  "<strong>%s</strong><br/>%g Chambres d'hotel par km?",
-  quartiers_paris$l_qu, quartiers_paris$hotels_c_density
-) %>% lapply(htmltools::HTML)
-
-
-
-m_bnb_offre_quartiers <- leaflet(quartiers_paris) %>%
-  #font de carte
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  #Chorolopeth RBNB densite
-  addPolygons(group="rbnb",
-    color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(airbnb_density),
-              highlight = highlightOptions(
-                weight = 5,
-                color = "#666",
-                dashArray = "",
-                fillOpacity = 0.7,
-                bringToFront = TRUE),
-              label = labsQuartiersRbnb,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>%
-  #Legende RBNB densite
-  addLegend(pal = pal,
-            values = ~airbnb_density,
-            opacity = 1.0,
-            title = "Nombre d'annonces<br/>AirBnB par km?<br/>par quartiers",
-            position = "bottomleft") %>%
-  #Chorolopeh Hotels densite
-  addPolygons(group="hotels", 
-              color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(hotels_c_density),
-              label = labsQuartiersHotels,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>% 
-  #Chorolopeh Hotels densite
-  addLegend(pal = pal,
-            values = ~hotels_c_density,
-            opacity = 1.0,
-            title = "Nombre de chambres<br/>d'hotels par km?<br/>par quartier",
-            position = "bottomright") %>%
-  # Layers control
-  addLayersControl(
-    baseGroups = c("rbnb", "hotels"),
-    options = layersControlOptions(collapsed = FALSE),
-    position = "topleft"
-  )
-m_bnb_offre_quartiers
-
-
-#enregistrement de la carte au format html
-#saveWidget(widget=m_bnb_offre_quartiers , file="m_bnb_offre_quartiers.html")
-
-
-
-#----Hotellerie----
-
-
-labsQuartiersHotels <- sprintf(
-  "<strong>%s</strong><br/>%g hotels",
-  quartiers_paris$l_qu, quartiers_paris$hotels_qrt
-) %>% lapply(htmltools::HTML)
-
-m_hotel_offre_quartiers <- leaflet(quartiers_paris) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(hotels_qrt),
-              label = labsQuartiersHotels,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>% 
-  addLegend(pal = pal,
-            values = ~hotels_qrt,
-            opacity = 1.0,
-            title = "nombre d'hotels / Quartiers")
-
-m_hotel_offre_quartiers
-
-#----Carte densite RBNB par km2 par arrondissement----
-### Niveau: Arrondissements
-## AirBNB
-
-
-labs <- sprintf(
-  "<strong>%s</strong><br/>%g annonces RBNB",
-  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$airbnb_density
-) %>% lapply(htmltools::HTML)
-
-m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(airbnb_density),
-              label = labs,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>%
-  addLegend(pal = pal,
-            values = ~airbnb_density,
-            opacity = 1.0,
-            title = "Nombre d'annonces<br/>AirBnB par km²<br/>par arrondissements")
-m_bnb_offre_arrd
-
-#----carte hotels par km2 par arrondissement----
-
-labs <- sprintf(
-  "<strong>%s</strong><br/>%g Nombre de<br/>chambres d'hotel par km?",
-  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$hotels_c_density
-) %>% lapply(htmltools::HTML)
-
-m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(hotels_c_density),
-              label = labs,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>% 
-  addLegend(pal = pal,
-            values = ~hotels_c_density,
-            opacity = 1.0,
-            title = "Nombre de chambres<br/>d'hotel par km?<br/>par arrondissements")
-
-m_hotel_offre_arrd
-
-
-#----carte hotels par hab par arrondissement----
-
-labs <- sprintf(
-  "<strong>%s</strong><br/>%g Nombre de<br/>chambres d'hotel par habitant",
-  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$hotels_c_density_hab
-) %>% lapply(htmltools::HTML)
-
-m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(hotels_c_density_hab),
-              label = labs,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>% 
-  addLegend(pal = pal,
-            values = ~hotels_c_density_hab,
-            opacity = 1.0,
-            title = "Nombre de chambres<br/>d'hotel par habitant<br/>par arrondissements")
-
-m_hotel_offre_arrd
-
-#----Carte densite RBNB par hab par arrondissement----
-### Niveau: Arrondissements
-## AirBNB
-
-labs <- sprintf(
-  "<strong>%s</strong><br/>%g Nombre d'annonces<br/>RBNB par habitant",
-  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$airbnb_density_hab
-) %>% lapply(htmltools::HTML)
-
-m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(airbnb_density_hab),
-              label = labs,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>%
-  addLegend(pal = pal,
-            values = ~airbnb_density_hab,
-            opacity = 1.0,
-            title = "Nombre d'annonces<br/>AirBnB par habitant<br/>par arrondissements")
-m_bnb_offre_arrd
-
-#----Carte densite hab par km? arrondissement----
-#Ce serait pas mal de calculer les surface hors parcs et cimeti?res
-
-labs <- sprintf(
-  "<strong>%s</strong><br/>%g habitants par km?",
-  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$density_hab_km
-) %>% lapply(htmltools::HTML)
-
-m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(density_hab_km),
-              label = labs,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>%
-  addLegend(pal = pal,
-            values = ~density_hab_km,
-            opacity = 1.0,
-            title = "Nombre d'habitants<br/>par km?<br/>par arrondissements")
-m_bnb_offre_arrd
-
-
-##### Prix moyen d'une nuit/personne 
-### Niveau: Quartiers
-
-labs <- sprintf(
-  "<strong>%s</strong><br/>Prix moyen : %g €",
-  quartiers_paris$l_qu, quartiers_paris$prix_moyen
-) %>% lapply(htmltools::HTML)
-
-m_bnb_prix_moyen_quartiers <- leaflet(quartiers_paris) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(prix_moyen),
-              label = labs,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>%
-  addLegend(pal = pal,
-            values = ~prix_moyen,
-            opacity = 1.0,
-            title = "Prix moyen nuit <br/>RBNB / quartiers")
-
-m_bnb_prix_moyen_quartiers
-
-
-### Niveau: Arrondissements
-
-labs <- sprintf(
-  "<strong>%s</strong><br/>Prix moyen : %g €",
-  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$prix_moyen
-) %>% lapply(htmltools::HTML)
-m_bnb_prix_moyen_arrdt <- leaflet(arrondissements_paris_sf) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(prix_moyen),
-              label = labs,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>%
-  addLegend(pal = pal,
-            values = ~prix_moyen,
-            opacity = 1.0,
-            title = "Prix moyen / quartiers")
-m_bnb_prix_moyen_arrdt
-
-
-
-### TO DO 
-##### Répartition de l'offre AirBNB proportionnellement à la population résidente [QUARTIERS SEULEMENT]
-
-# Leaflet map : nombre d'offre par arrd
-m_bnb_densite_arrd <- leaflet(arrondissements_paris_sf) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(densitebnb)) %>%
-  addLegend(pal = pal,
-            values = ~densitebnb,
-            opacity = 1.0,
-            title = "Densité  AirBnB / Quartiers")
-m_bnb_densite_arrd
-
-#m %>% addMarkers(df$longitude, df$latitude, clusterOptions= markerClusterOptions())
-
-# Leaflet map : prix moyen par quartier
-m_bnb_prix_quartier <- leaflet(airbnb_quartiers) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white", dashArray = "3", weight=2, smoothFactor = 0.3, fillOpacity = 0.9,fillColor = ~pal(meanprice)) %>%
-  addLegend(pal = pal, values = ~meanprice, opacity = 1.0, title = "Prix moyen AirBnB / Quartiers")
-m_bnb_prix_quartier
-
-# Leaflet map : nombre d'offre par arrondissements
-
-
-
-
-# Densité hotel/pop total
-arrondissements_paris_sf$densite_hotels <- arrondissements_paris_sf$hotels/arrondissements_paris_sf$pop_totale
-
-# Leaflet map : nombre d'offre par arrd
-m_bnb_densiteh_arrd <- leaflet(arrondissements_paris_sf) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(densite_hotels)) %>%
-  addLegend(pal = pal,
-            values = ~densite_hotels,
-            opacity = 1.0)
-
-
-m_bnb_densiteh_arrd
-
-
-#### Marge AirBNB
-labs <- sprintf(
-  "<strong>%s</strong><br/>Marge Airbnb : %g €",
-  marge_airbnb$nom_quartier, (marge_airbnb$prix_nuite_airbnb_80_de_365 - marge_airbnb$loyer_mensuel_x_80_de_12)
-) %>% lapply(htmltools::HTML)
-
-m_bnb_prix_moyen_quartiers <- leaflet(marge_airbnb) %>%
-  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
-  addPolygons(color="white",
-              dashArray = "3",
-              weight=2,
-              smoothFactor = 0.3,
-              fillOpacity = 0.9,
-              fillColor = ~pal(prix_nuite_airbnb_80_de_365-loyer_mensuel_x_80_de_12),
-              label = labs,
-              labelOptions = labelOptions(
-                style = list("font-weight" = "normal", padding = "3px 8px"),
-                textsize = "15px",
-                direction = "auto")) %>%
-  addLegend(pal = pal,
-            values = ~(prix_nuite_airbnb_80_de_365-loyer_mensuel_x_80_de_12),
-            opacity = 1.0,
-            title = "Marge Airbnb")
-
-m_bnb_prix_moyen_quartiers
 

@@ -1,0 +1,592 @@
+---
+title: "Etude de l'offre de logements Airbnb à Paris "
+author: "William NGAUV, Kadir KARAKUS, Raphaël SEROUGNE"
+date: "08/02/2018"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+library(leaflet)
+library(leaflet.extras)
+library(sp)
+library(sf)
+load('data')
+```
+
+##Abstract
+<div style="text-align: justify">Nous avons analysé l'offre de logement Airbnb à Paris en croisant différentes sources de données open-source afin de montrer l'impact des loueurs "professionnels et saisonniers" sur la démographie de Paris. Malgré les contraintes réglementaires imposées par la ville de Paris, la marge réalisée de la location saisonnière par rapport à la location de longue durée peut être assez conséquente, notamment autours des zones touristiques tels que le 1er arrondissement ou le 6ème arrondissement et cela a poussé certains loueurs à enfeindre la loi.</div>
+
+
+##Outils 
+<div style="text-align: justify">Les pré-traitements des données a été réalisées sur Python pour les tâches d'aggrégation ou de nettoyage des données et pour la partie réalisé avec R, de nombreuses autres librairies ont été nécessaires au différents traitements, en particulier le package sf pour les traitements spatiaux.
+Les cartes ont été entièrement réalisé sous R à l'aide de la librairie "leaflet". Nous avons choisi d'utiliser cette librairie car elle nous a permis de réaliser des cartes interactives fonctionnelles et esthétiques.
+Les codes sources sont disponible sur ce [dépôt Github](https://github.com/rsrgn/Rbnb-Paris-cartes)</div>
+
+
+##Données
+<div style="text-align: justify">Les données proviennent des sources indiquées sur l'énoncé du projet ainsi que de nos recherches sur différents fournisseurs tel que l'INSEE ou l'IGN. Les liens téléchargeables sont disponibles sur les codes sources de pré-traitements de données.</div>
+
+####Les couches de polygones
+* La carte des arrondissements : https://opendata.paris.fr/explore/dataset/arrondissements/
+* La carte des quartiers administratifs de Paris : https://opendata.paris.fr/explore/dataset/quartier_paris/export/?location=12,48.85889,2.34692
+<br/>
+
+####Les couches de points
+* Les hôtels : https://data.iledefrance.fr/explore/dataset/les_hotels_classes_en_ile-de-france/export/?refine.departement=75
+* Les annonces Airbnb : http://data.insideairbnb.com/france/ile-de-france/paris/2017-04-04/data/listings.csv.gz
+<br/>
+
+####Les autres sources de données :
+* La population par tri iris issu du rensencement de 2014 :https://www.insee.fr/fr/statistiques/fichier/3137409/base-ic-evol-struct-pop-2014.zip
+* Les loyers de références à Paris :https://www.data.gouv.fr/fr/datasets/donnees-de-lencadrement-des-loyers-a-paris-et-lille/
+* Articles du JDN :http://www.journaldunet.com/economie/immobilier/1175834-location-airbnb-versus-location-classique/
+<br/>
+<br/>
+
+##Analyse des données
+####Analyse des annonces Airbnb
+<div style="text-align: justify">Nous avons analysé quelques aspects des annonces Airbnb sans pour autant pousser cette analyse trop loin. L'immense quantité d'informations disponible rend ce travail difficile, mais voici quelques aspects que nous avons trouvé intéressant de partager.</div><br/>
+
+<div style="text-align: justify"> L'analyse de la distribution du prix des annonces nous donne une médiane à 75 euros, le quartile supérieur à 105 euros et le quartile inférieur à 55 euros. En traçant les annonces correspondant aux offres supérieurs au neuvieme décile (blanc) et inférieurs au premier décile (orange), on s'aperçoit que les offres les plus chers se situe autour du centre et nord de Paris et que les offres les moins cher sont en périphérie de cette zone. Les anonces provenant des [Superhost](https://www.airbnb.fr/help/article/828/what-is-a-superhost) ont un prix moyen de 118 euros contre 93 euros pour les autres.</div><br/>
+
+<div style="text-align: justify"> L'étude des mots clés dans les descriptions soulève plusieurs points. La plupart des mots clés sont en anglais montrant que l'offre Airbnb est orienté vers le tourisme provenant de l'étranger ou sinon ce sont des mots faisant référence à l'emplacement et au type du logement.</div><br/>
+```{r ,echo=FALSE, fig.align='center', message=FALSE, warning=FALSE}
+
+library(wordcloud)
+library(RColorBrewer)
+plot1 <- renderPlot({
+  hist(
+  as.numeric(df$price),
+  breaks = 200,
+  main = "Prix des offres Airbnb",
+  xlab = "Prix",
+  xlim = c(0,400),
+  col = '#00DD00',
+  border = 'white')})
+ 
+plot2 <- renderPlot( wordcloud(words = cloud$word, freq = cloud$no_rows, min.freq = 1000,
+          max.words=80, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2")))
+ 
+plot3 <- leaflet(data = listings2) %>% addProviderTiles("CartoDB.DarkMatter") %>%
+  addCircleMarkers(~longitude, ~latitude, radius = 0.2 ,
+                   color = ifelse(listings2$price > 160, "white", "orange"),
+                   fillOpacity = 0.01)
+
+ tabsetPanel(type = "tabs",
+                  tabPanel("Prix", plot1),
+                  tabPanel("Carte Décile", plot3),
+                  tabPanel("Description", plot2)
+              )
+```
+
+####Répartition spatiale de l'offre Airbnb et de l'hôtellerie
+<div style="text-align: justify">Nous avons réalisé une représentation spatiale des l'offre Airbnb et de l'offre hôtelière selon différents axes. D'abord nous avons souhaité proposer une vision purement spatiale de ces offres et nous avons donc calculé une densité par km² à l'échelle de l'arrondissement et à l'échelle du quartier administratif. Pour compléter ces deux échelles nous avons également réalisé une "heatmap" c'est à dire une carte de densité calculée à partir de mesure de la densité de point autour de chaque point de la carte.</div><br/>
+
+<div style="text-align: justify">Dans un deuxième temps nous avons travaillé à représenter les offres hôtelières et Airbnb non plus en fonction de la surface mais de la population des arrondissements et des quartiers Parisiens. </div><br/>
+
+<div style="text-align: justify">Pour l'offre Airbnb nous avons travaillé à partir de la liste de l'ensemble des annonces parisiennes sur un intervalle d'une année.</div><br/>
+
+<div style="text-align: justify">Pour l'offre hotelière nous avons travaillé à partir de la liste des hôtels classés en Île-de-France. Nous avons souhaité compter le nombre de chambre d'hôtels disponible par unité spatiale considérée, de nombreux traitement ont été nécéssaires pour parvenir à ce résultat, notamment des intersections spatiales à l'aide de la fonction *st_cover* du package **sf** nous ont permis de compter le nombre de point des couches hôtels et Airbnb présent dans chaque polygone des couches arrondissements et quartiers. Concernant la "heatmap" de l'offre hôtelière, notons qu'elle ne représente que les hôtels, les points ne sont pas pondérés par le nombre de chambre proposée, ce qui rend cette carte difficilement comparable à la "heatmap" de l'offre Airbnb qui, représente pratiquement chaque chambre disponible</div><br/>
+
+<div style="text-align: justify">L'une des limites de ce travail de création de cartographies concernant les densités spatiales, c'est à dire les calculs de divisions du nombre d'offre Airbnb ou de chambre d'hôtels par la surface est que certaines zones contiennent d'importants espaces verts, comme par exemple le 12ème arrondissement. Ces calculs de densité serait bien plus significiatif si nous avions pu retirer de la surface de la zone considérée la surfaces des éléments de type parc, cimetière et jardins. Ce travail serait réalisable avec un investissement suplémentaire en temps de travail. Notamment en utilisant la fonction st_intersection qui permettrait à partir d'une carte des arrondissement de Paris et d'une carte des parcs et cimetières de réaliser une nouvelle carte des arrondissement subdivisés en types de polygones : "parcs et cimetières" et "non parcs et cimetières". A partir de cette carte, il serait facile de calculer la surface de chaque arrondissement ou quartier hors parcs et cimetières en utilisant par exemple la fonction st_area.</div><br/>
+**Arrondissements**
+```{r, echo=FALSE}
+# Densite hab/km2
+lab0 <- sprintf(
+  "<strong>%s</strong><br/>%g habitants par km²",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$density_hab_km
+) %>% lapply(htmltools::HTML)
+pal0 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = arrondissements_paris_sf$density_hab_km)
+m_hab_arrdt <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              fillColor = ~pal0(density_hab_km),
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              label = lab0,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal0,
+            values = ~density_hab_km,
+            opacity = 1.0,
+            title = "Nombre d'habitants<br/>par km²<br/>par arrondissements")
+#Annonces Airbnb / km2
+lab1 <- sprintf(
+  "<strong>%s</strong><br/>%g annonces Airbnb",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$airbnb_density
+) %>% lapply(htmltools::HTML)
+pal1 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = arrondissements_paris_sf$airbnb_density)
+m_bnb_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillColor = ~pal1(airbnb_density),
+              label = lab1,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal1,
+            values = ~airbnb_density,
+            opacity = 1.0,
+            title = "Nombre d'annonces<br/>AirBnB par km²")
+#Chambres hotel par km2
+lab2 <- sprintf(
+  "<strong>%s</strong><br/>%g Nombre de<br/>chambres d'hotel par km²",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$hotels_c_density
+) %>% lapply(htmltools::HTML)
+pal2 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = arrondissements_paris_sf$hotels_c_density)
+m_hotel_offre_arrd <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillOpacity = 0.9,
+              fillColor = ~pal2(hotels_c_density),
+              label = lab2,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>% 
+  addLegend(pal = pal2,
+            values = ~hotels_c_density,
+            opacity = 1.0,
+            title = "Nombre de chambres<br/>d'hotel par km²")
+#----Carte densite RBNB par hab par quartiers----
+lab3 <- sprintf(
+  "<strong>%s</strong><br/>%g Nombre d'annonces<br/>RBNB par habitant",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$airbnb_density_hab
+) %>% lapply(htmltools::HTML)
+pal3 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = arrondissements_paris_sf$airbnb_density_hab)
+m_bnb_density_hab_arrdt <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillColor = ~pal3(airbnb_density_hab),
+              label = lab3,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal3,
+            values = ~airbnb_density_hab,
+            opacity = 1.0,
+            title = "Nombre d'annonces<br/>AirBnB par habitant<br/>par arrdt")
+#
+lab4 <- sprintf(
+  "<strong>%s</strong><br/>%g Hotellerie<br/> par habitant",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$hotels_c_density_hab
+) %>% lapply(htmltools::HTML)
+pal4 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = arrondissements_paris_sf$hotels_c_density_hab)
+m_hotels_density_hab_arrdt <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillOpacity = 0.9,
+              fillColor = ~pal4(hotels_c_density_hab),
+              label = lab4,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal4,
+            values = ~hotels_c_density_hab,
+            opacity = 1.0,
+            title = "Nombre de chambres<br/>d'hôtels par habitant<br/>par arrdt")
+tabsetPanel(type = "tabs",
+                  tabPanel("Population/km2", m_hab_arrdt),
+                  tabPanel("Airbnb/km2", m_bnb_offre_arrd),
+                  tabPanel("Hotels/km2", m_hotel_offre_arrd),
+                  tabPanel("Airbnb/habitant", m_bnb_density_hab_arrdt ),
+                  tabPanel("Hotels/habitant", m_hotels_density_hab_arrdt))
+```
+**Quartiers**
+```{r, echo=FALSE}
+lab0 <- sprintf(
+  "<strong>%s</strong><br/>%g habitants par km²",
+  quartiers_paris$l_qu, quartiers_paris$density_hab_km
+) %>% lapply(htmltools::HTML)
+pal0 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = quartiers_paris$density_hab_km)
+m_hab_qtr <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillOpacity = 0.9,
+              fillColor = ~pal0(density_hab_km),
+              label = lab0,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal0,
+            values = ~density_hab_km,
+            opacity = 1.0,
+            title = "Nombre d'habitants<br/>par km²<br/>par quartier")
+lab5 <- sprintf(
+  "<strong>%s</strong><br/>%g annonces Airbnb",
+  quartiers_paris$l_qu, quartiers_paris$airbnb_density
+) %>% lapply(htmltools::HTML)
+pal5 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = quartiers_paris$airbnb_density)
+m_bnb_offre_qtr <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillColor = ~pal5(airbnb_density),
+              label = lab5,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal5,
+            values = ~airbnb_density,
+            opacity = 1.0,
+            title = "Nombre d'annonces<br/>AirBnB par km²")
+
+lab6 <- sprintf(
+  "<strong>%s</strong><br/>%g Nombre de<br/>chambres d'hotel par km²",
+  quartiers_paris$l_qu, quartiers_paris$hotels_c_density
+) %>% lapply(htmltools::HTML)
+pal6 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = quartiers_paris$hotels_c_density)
+m_hotel_offre_qtr <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillOpacity = 0.9,
+              fillColor = ~pal6(hotels_c_density),
+              label = lab6,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal6,
+            values = ~hotels_c_density,
+            opacity = 1.0,
+            title = "Nombre de chambres<br/>d'hotel par km²")
+#----Carte densite RBNB par hab par quartiers----
+lab3 <- sprintf(
+  "<strong>%s</strong><br/>%g Nombre d'annonces<br/>RBNB par habitant",
+  quartiers_paris$l_qu, quartiers_paris$airbnb_density_hab
+) %>% lapply(htmltools::HTML)
+pal3 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = quartiers_paris$airbnb_density_hab)
+m_bnb_density_hab_qtr <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillOpacity = 0.9,
+              fillColor = ~pal3(airbnb_density_hab),
+              label = lab3,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal3,
+            values = ~airbnb_density_hab,
+            opacity = 1.0,
+            title = "Nombre d'annonces<br/>AirBnB par habitant<br/>par quartier")
+#
+lab4 <- sprintf(
+  "<strong>%s</strong><br/>%g Hotellerie<br/> par habitant",
+  quartiers_paris$l_qu, quartiers_paris$hotels_c_density_hab
+) %>% lapply(htmltools::HTML)
+pal4 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = quartiers_paris$hotels_c_density_hab)
+m_hotels_density_hab_qtr <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillColor = ~pal4(hotels_c_density_hab),
+              label = lab4,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal4,
+            values = ~hotels_c_density_hab,
+            opacity = 1.0,
+            title = "Nombre de chambres<br/>d'hôtels par habitant<br/>par quartier")
+tabsetPanel(type = "tabs",
+                  tabPanel("Population/km2", m_hab_qtr),
+                  tabPanel("Airbnb/km2", m_bnb_offre_qtr),
+                  tabPanel("Hotels/km2", m_hotel_offre_qtr),
+                  tabPanel("Airbnb/habitant", m_bnb_density_hab_qtr ),
+                  tabPanel("Hotels/habitant", m_hotels_density_hab_qtr))
+```
+**Carte de chaleur : PARIS**
+```{r, echo=FALSE}
+m_bnb_heatmap <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$CartoDB.DarkMatter) %>%
+  addWebGLHeatmap(lng=df$longitude,
+                  lat=df$latitude,
+                  size="100",
+                  units="m")
+
+m_hotel_heatmap <- leaflet() %>%
+  setView(lng = 2.349014, lat = 48.864716, zoom = 11) %>%
+  addProviderTiles(providers$CartoDB.DarkMatter) %>%
+  addWebGLHeatmap(data=hotel_paris,
+                  size="100",
+                  intensity = hotel_paris$nombre_de_chambres)
+
+tabsetPanel(type = "tabs",
+                  tabPanel("Airbnb", m_bnb_heatmap),
+                  tabPanel("Hotels", m_hotel_heatmap))
+```
+<br/>
+<div style="text-align: justify">Les éléments cartographiques ci dessus nous permettent d'observer la répartition spatiale des offres hôtelières et Airbnb selon différents niveaux d'agrégation spatiales et en fonction de la surface et du nombre d'habitants des zones considérées.</div><br/>
+<div style="text-align: justify">On observe d'abord que l'offre Airbnb est très concentrée dans les arrondissements centraux 1er, 2ème, 3ème, 4ème, 5ème et 6ème, ainsi que dans le 17ème arrondissement. Nous avons été surpris de découvrir que les 8ème et 7ème arrondissement qui sont aussi des zones très touristiques (voir ZTI), ne font pas partie des zones où l'on retrouve le plus d'offre Airbnb par km². Ce qui est à relativiser car la vue par habitant indique une proportion comparable aux autres arrondissements centraux pour les 7ème et 8ème.</div><br/>
+<div style="text-align: justify">L'offre hôtelière semble se répartir un peu différement. Si les arrondissements centraux restent les plus pourvu en nombre de chambres d'hôtel par km² et par habitants par rapport aux arrondissements extérieurs, l'offre hôtelière apparaît la plus dense dans les 1er, 8ème et 9ème arrondissement.</div><br/>
+<div style="text-align: justify">Notons également que les densités de chambres d'hôtels et d'offres Airbnb sont assez proches.</div><br/>
+```{r,echo=FALSE, fig.align='center'}
+hotels_plot <- renderPlot({
+  par(las=2)
+  par(mar=c(5,12,4,2))
+  barplot(arrondissements_paris_sf$hotels_c_nb ,
+          names.arg=arrondissements_paris_sf$l_ar,
+          horiz=TRUE,
+          main = "Nombre de chambres d'hôtels par arrondissements",
+          axis.lty=1,
+     col = '#00DD00',
+     border = 'white')})
+
+airbnb_plot <- renderPlot({
+  par(las=2)
+  par(mar=c(5,12,4,2))
+  barplot(arrondissements_paris_sf$airbnb_nb ,
+        names.arg=arrondissements_paris_sf$l_ar,
+        horiz=TRUE,
+        main = "Nombre d'offre Airbnb par arrondissements",
+        axis.lty=1,
+     col = '#00DD00',
+     border = 'white')})
+
+
+tabsetPanel(type = "tabs",
+                  tabPanel("Airbnb", airbnb_plot),
+                  tabPanel("Hotels", hotels_plot))
+
+```
+<div style="text-align: justify">Enfin, l'élement le plus étonnant de cette analyse semble être que la zone la plus rentable pour la location de logement (voir chapitre ci-après) c'est à dire le 8ème arrondissement présente une densité d'hôtels bien plus élevé que la densité d'offres Airbnb. Ce qui pourrait suggérer que les zones les plus rentables sont déjà très fortement occupées par les hôtels et qu'il y a peu d'espace disponible pour que la concurrence Airbnb s'y installe.</div><br/>
+
+####Prix moyen d'une nuit/personne
+<div style="text-align: justify">Pour traiter cette question, nous avons réalisé une jointure spatiale entre les données *Airbnb* et nos cartes de délimitations administratives afin d'obtenir le nombre d'offres par quartier/arrondissement puis nous avons réalisé une aggrégation spatiale afin d'obtenir la moyenne des prix d'une nuit par personne au sein d'un quartier.</div><br/>
+```{r, echo=FALSE}
+pal7 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = quartiers_paris$prix_moyen)
+lab7 <- sprintf(
+  "<strong>%s</strong><br/>Prix moyen : %g €",
+  quartiers_paris$l_qu, quartiers_paris$prix_moyen
+) %>% lapply(htmltools::HTML)
+
+m_bnb_prix_moyen_quartiers <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              fillOpacity = 0.9,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillColor = ~pal7(prix_moyen),
+              label = lab7,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal7,
+            values = ~prix_moyen,
+            opacity = 1.0,
+            title = "Prix moyen nuit/personne")
+
+pal8 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = arrondissements_paris_sf$prix_moyen)
+lab8 <- sprintf(
+  "<strong>%s</strong><br/>Prix moyen : %g €",
+  arrondissements_paris_sf$l_ar, arrondissements_paris_sf$prix_moyen
+) %>% lapply(htmltools::HTML)
+m_bnb_prix_moyen_arrdt <- leaflet(arrondissements_paris_sf) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillOpacity = 0.9,
+              fillColor = ~pal8(prix_moyen),
+              label = lab8,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addLegend(pal = pal8,
+            values = ~prix_moyen,
+            opacity = 1.0,
+            title = "Prix moyen nuit/personne")
+
+tabsetPanel(type = "tabs",
+                  tabPanel("Quartiers", m_bnb_prix_moyen_quartiers),
+                  tabPanel("Arrondissements", m_bnb_prix_moyen_arrdt))
+```
+<div style="text-align: justify">Sans surprise, les offres de logement les plus chères se situent dans les ZTI (Zones Touristiques Internationales).  
+On constate des écarts allant du double au triple selon l'arrondissement dans lesquel l'offre de logement se trouve. Au sein des quartiers d'un même arrondissement, l'écart est moins important mais reste tout de même conséquent (de l'ordre de 60% pour le 16ème arrondissement par exemple).</div>
+
+
+####Estimations des loueurs professionnels
+La législation sur la location **saisonière** de résidence principale impose:
+
+* Chaque séjour ne doit pas excéder 90 jours pour un même locataire (quelque soit le type de résidence).  
+* La résidence principale ne peut pas être mis en location plus de 120 jours par an.  
+* Les résidences secondaires mis en location doivent être déclarées auprès de la mairie afin de changer le statut de ces dernières en **meublé touristique**.  
+
+
+Afin de déterminer si un loueur est un "professionel" ou pas, nous avons émis les hypothèses suivantes:
+
+* Disponibilité du logement supérieur à 120 jours.
+* L'hébergeur possède au moins 2 logements en location sur Airbnb.
+* Pas de distinctions entre les types de logement.  
+
+<div style="text-align: justify">
+Ces hypothèses nous ont permis de réduire le nombre d'offre de 56 535 à 7 822 ce qui représente environ 13% des offres Airbnb. Lors de notre analyse, nous avons remarqué que certains loueurs possédaient jusqu'à 102 hébergements à disposition sur le site. Nous avons également essayé d'estimer le revenu mensuel aggrégé de ces loueur en fonction des paramètres suivants : le prix d'une nuit par personne, le nombre de nuit minimum et le nombre d'avis mensuel.  
+De plus, comme nous avons pu le constater dans le paragraphe précédent, les zones où nous avons le plus d'offres sont situées dans les zones où l'hôtellerie est la moins présente.</div><br/>
+```{r, echo=FALSE}
+labs <- sprintf(
+  "<strong>%s</strong><br/>Prix moyen nuit/pers. : %g €",
+  quartiers_paris$l_qu, quartiers_paris$prix_moyen
+) %>% lapply(htmltools::HTML)
+
+mlabs <- sprintf(
+  "<strong>HostID : %s</strong><br/>Liste des offres : %s<br/>Estim. revenu mensuel : %g €",
+  loueurs_suspects$host_id, loueurs_suspects$calculated_host_listings_count, loueurs_suspects$estimated_monthly_income
+) %>% lapply(htmltools::HTML)
+
+pal9 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = quartiers_paris$prix_moyen)
+
+m_bnb_loueurs_suspects_qtr <- leaflet(quartiers_paris) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillOpacity = 0.9,
+              fillColor = ~pal9(prix_moyen),
+              label = labs,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>%
+  addMarkers(lng = ~loueurs_suspects$longitude,
+             lat = ~loueurs_suspects$latitude,
+             clusterOptions = markerClusterOptions(),
+             label = mlabs,
+             labelOptions = labelOptions(
+               style = list("font-weight" = "normal", padding = "3px 8px"),
+               textsize = "10px",
+               direction = "auto"))
+tabsetPanel(type = "tabs",
+                  tabPanel("Quartiers", m_bnb_loueurs_suspects_qtr))
+```
+
+####Prix des logements à Paris et la marge réalisée en location saisonnière  
+<div style="text-align: justify">Le prix par m² de chaque quartier proviennent de données récupérées sur MeilleursAgents et se focalise exclusivement sur les studios et deux-pièces de moins de cinquante mètres carrés. Le découpage des quartiers n'étant pas le même que les précédentes cartes, nous n'avons pu faire de jointure entre ces données et les couches de données des quartiers récupérées sur OpenData.</div><br/>
+```{r, echo=FALSE}
+lab10 <- sprintf(
+  "<strong>%s</strong><br/>Prix du m² en location<br/>Airbnb : %g €<br/><br/>Prix du m² en location<br/>classique: %g €<br/><br/>La location Airbnb est <b>%s<br/> plus rentable</b> que la location classique.",
+  marge_airbnb$nom_quartier, marge_airbnb$prix_nuite_airbnb_80_de_365, marge_airbnb$loyer_mensuel_x_80_de_12, marge_airbnb$rapport_entre_prix_nuite_airbnb_365_et_loyer_annuel
+) %>% lapply(htmltools::HTML)
+pal10 <- colorNumeric(palette = c('#e7e1ef','#c994c7','#dd1c77'), domain = marge_airbnb$rapport_entre_prix_nuite_airbnb_365_et_loyer_annuel)
+m_bnb_marge_quartiers <- leaflet(marge_airbnb) %>%
+  addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
+  addPolygons(color="white",
+              dashArray = "3",
+              weight=2,
+              smoothFactor = 0.3,
+              highlight = highlightOptions(color = "#000", weight = 3,
+      bringToFront = TRUE),
+              fillOpacity = 0.9,
+              fillColor = ~pal10(rapport_entre_prix_nuite_airbnb_365_et_loyer_annuel),
+              label = lab10,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "10px",
+                direction = "auto")) %>%
+  addLegend(pal = pal10,
+            values = ~(rapport_entre_prix_nuite_airbnb_365_et_loyer_annuel),
+            opacity = 1.0,
+            title = "Marge Airbnb")
+
+tabsetPanel(type = "tabs",
+                  tabPanel("Quartiers", m_bnb_marge_quartiers))
+```
+<div style="text-align: right"> Source : [Carto/jdn](https://jdn.carto.com/tables/paris_les_quartiers_o_airbnb_rapporte_le_plus_compar_la_locatio/public)</div><br/>
+<div style="text-align: justify">On constate encore une fois qu'il est très rentable de louer son logement sur Airbnb.  
+Les quartiers les plus *rentables* se trouvent dans le 4ème arrondissement où la marge réalisable peut aller jusqu'au triple par rapport à une location longue durée. Dans les arrondissements les moins rentables, la marge réalisée est seulement le *double* d'une location traditionnelle.<br/>
+La forte rentabilité de la location courte durée contribue à la pénurie de logement pour les habitants de la région à la fois au raréfiant l'offre de logement longue durée et en en augmentant le coût.
+
+L'un des articles que nous avons étudié pour préparer notre travail traitait du sujet de la marge des propriétaires et nous avons décidé d'utiliser le dataset joint à l'article du jdn pour réaliser la carte.
+</div>
+
+##Discussion
+
+<div style="text-align: justify">À travers cette analyse, nous avons pu étudier l’offre de logement Airbnb sur Paris et comprendre l’étendue du problème qui oppose les villes à ces plateformes de locations saisonnières. C'est dire que la forte rentabilité de la location saisonnière contribue à la raréfaction de l'offre de logement pour les habitants de la région et l'augmentation des coûts de logement dans le centre ville. A terme il existe également le risque de voir les zones le plus touristiques se vider de leurs habitants, ce qui est déjà quasiment le cas dans une ville comme Venise. Le durcissement des lois (ALUR 2014), les conditions d'obtention très strictes du statut de "meublé touristique" et les marges potentielles réalisables sur les plateformes de location ont sans doute influé sur la décision des loueurs à proposer leurs biens en location saisonnières, quitte à enfreindre la loi.</div>
+
+
+####Bilan
+<div style="text-align: justify">Ce projet nous a permis de découvrir le travail collaboratif. En effet, il nous a fallu plusieurs heures de *brainstorming* afin de mettre en place une stratégie de création de cartes:
+
+* Quel fond de carte ?
+* Quelles données pour x carte ?
+* Quelle librairie de visualisation ?
+* Cartes interactives ou cartes "imprimables
+
+La répartition des tâches s'est faite naturellement : ayant chacun un profil différent, nous avons tous abordé le sujet avec le langage de *prédilection*, d'où les différents scripts de pré-traitement de données. Nous nous sommes ensuite mis d'accord pour utiliser R pour la création des cartes, en partie grâce aux nombreux avantages des librairies "leaflet" et "sf" dont nous avons évoqué plus tôt.<br/>
+Cependant, nous avons aussi été confronté à des nombreux problèmes liés au travail collaboratif. Nous avons décidé de travailler sur un seul script ce qui a posé des soucis lorsque nous avions chacun fait en même temps des modifications. Pour ce point, il nous aurait fallu creuser plus en détail le logiciel **Git** et notamment la partie *branche* et la fonction *merge*.  
+De plus, l'assemblage des cartes pour le rapport final fut un véritable chantier : il faut s'assurer que les palettes de couleurs utilisent les bons arguments (la bonne variable du bon jeu de données par exemple), que les légendes correspondent aux cartes, etc.<br/><br/>
+Pour conclure, ce projet nous aura fait énormément progresser tant dans la programmation que dans la partie gestion du travail. Nous sommes assez satisfait du rendu, les nombreuses heures de travail (plus de 50h à trois !) ont payé leurs fruits.</div>

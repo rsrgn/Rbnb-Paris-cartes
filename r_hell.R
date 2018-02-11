@@ -182,15 +182,81 @@ quartiers_paris$airbnb_density_hab <- as.numeric(
   quartiers_paris$airbnb_qrt / quartiers_paris$pop2014)
 
 hotel_paris <-geojsonio::geojson_read( "./COUCHES/les_hotels_classes_en_ile-de-france.geojson.json", what = "sp")
+
+
+library(tidytext)
+library(tm)
+library(wordcloud)
+library(tidyverse)
+library(stringr)
+library(magrittr)
+library(leaflet)
+library(ggplot2)
+library(dplyr)
+
+# lecture du fichier listings (listings full sur inside airbnb) et transformation des données 
+
+listings<- read.csv("./COUCHES/listings.csv", na.strings=c(""," ","NA"))
+listings$price <- as.numeric(sub("\\$","", listings$price))
+listings$description <- as.character(listings$description)
+listings$neighbourhood_cleansed <- factor(listings$neighbourhood_cleansed)
+listings$host_is_superhost <- factor(listings$host_is_superhost)
+listings$bedrooms <- as.factor(listings$bedrooms)
+
+# distribution des prix 
+
+quantile(listings$price,
+         probs = seq(0, 1, 0.01),
+         na.rm=TRUE)
+
+
+hist_prix <- hist(listings$price,
+                  main = "Prix des offres Airbnb",
+                  xlab = "Prix",
+                  xlim = c(0,400),
+                  
+                  col = '#00DD00',
+                  border = 'white')
+
+# distribution nb de chambres
+
+dist_chambres <- barplot(table(listings$bedrooms),
+                         main = "Nombre de Chambres \n des offres Airbnb",
+                         xlab = "Nombre de Chambres",
+                         axis.lty=1,
+                         col = '#00DD00',
+                         border = 'white')
+
+#prix moyen superhost
+avg <- listings %>% select(host_is_superhost, price)
+aggregate(price~host_is_superhost, avg, mean)
+
+#selection des mots les plus courans dans les annonces
+
+listings_words <- df %>%
+  select(id, name) %>%
+  unnest_tokens(word, name) %>%
+  filter(!word %in% c("ou","il","pas","de","du","les","des","la","le","est","avec","pour","vous","une","en","dans","au"),!word %in% stop_words$word,
+         str_detect(word, "^[a-z']+$"))
+
+
+cloud <- as.data.frame(listings_words %>% 
+                         group_by(word) %>%
+                         summarise(no_rows = length(word)))
+
+# carte 10% comparaison
+listings2 <-  subset(df, df$price < 40 | df$price > 160)
+
 #----Sauvegarde des donn?es----
 save(list= c("arrondissements_paris_sf", 
              "quartiers_paris",
              "loueurs_suspects",
              "marge_airbnb",
              "df",
-             "hotel_paris"), 
+             "hotel_paris",
+             "listings2",
+             "cloud"), 
      file = "data", compress = "xz")
 
 #----Chargement des donn?es----
 load("data")
-
